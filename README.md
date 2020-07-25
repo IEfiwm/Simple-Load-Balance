@@ -20,10 +20,10 @@ Where : 👇🏻
 
 |Details| Description |
 |--|--|
-| `balance.go` |   Your File Name |
-|`1234`  | Balance Port |
+| balance.go |   Your File Name |
+|1234  | Balance Port |
 |--|--|
-|`1.1.1.1` |Your Other Server IP you want to balance|
-| `443` | Your Other Server Port |
+|1.1.1.1 | Your Other Server IP you want to balance | 
+| 443 | Your Other Server Port |
 
 
