@@ -1,70 +1,80 @@
 package main
 
 import (
+    "flag"
+    "io"
     "log"
-    "os"
-
-    BA "github.com/darkhelmet/balance/backends"
-    "github.com/gonuts/commander"
-    "github.com/gonuts/flag"
+    "net"
+    "strings"
 )
 
-var cmd = &commander.Command{
-    Short: "load balance tcp, http, and https connections to multiple backends",
+type Backends struct {
+    servers []string
+    n       int
 }
 
-func ensureBind(bindFlag *flag.Flag) string {
-    if bindFlag == nil {
-        log.Fatalln("bind flag not defined")
-    }
+func (b *Backends) Choose() string {
+    idx := b.n % len(b.servers)
+    b.n++
+    return b.servers[idx]
+}
 
-    bind, ok := bindFlag.Value.Get().(string)
-    if !ok {
-        log.Fatalln("bind flag must be defined as a string")
-    }
+func (b *Backends) String() string {
+    return strings.Join(b.servers, ", ")
+}
 
-    if bind == "" {
+var (
+    bind     = flag.String("bind", "", "The address to bind on")
+    balance  = flag.String("balance", "", "The backend servers to balance connections across, separated by commas")
+    backends *Backends
+)
+
+func init() {
+    flag.Parse()
+
+    if *bind == "" {
         log.Fatalln("specify the address to listen on with -bind")
     }
 
-    return bind
+    servers := strings.Split(*balance, ",")
+    if len(servers) == 1 && servers[0] == "" {
+        log.Fatalln("please specify backend servers with -backends")
+    }
+
+    backends = &Backends{servers: servers}
 }
 
-func buildBackends(balanceFlag *flag.Flag, backends []string) BA.Backends {
-    if balanceFlag == nil {
-        log.Fatalln("balance flag not defined")
-    }
-
-    balance, ok := balanceFlag.Value.Get().(string)
-    if !ok {
-        log.Fatalln("balance flag must be defined as a string")
-    }
-
-    if balance == "" {
-        log.Fatalln("specify the balancing algorithm with -balance")
-    }
-
-    return BA.Build(balance, backends)
+func copy(wc io.WriteCloser, r io.Reader) {
+    defer wc.Close()
+    io.Copy(wc, r)
 }
 
-func newFlagSet(name string) *flag.FlagSet {
-    fs := flag.NewFlagSet(name, flag.ExitOnError)
-    fs.String("bind", "", "the address to listen on")
-    fs.String("balance", "round-robin", "the balancing algorithm to use")
-    return fs
-}
-
-func balancer(f func(string, BA.Backends) error) func(*commander.Command, []string) error {
-    return func(cmd *commander.Command, args []string) error {
-        bind := ensureBind(cmd.Flag.Lookup("bind"))
-        backends := buildBackends(cmd.Flag.Lookup("balance"), args)
-        return f(bind, backends)
+func handleConnection(us net.Conn, server string) {
+    ds, err := net.Dial("tcp", server)
+    if err != nil {
+        us.Close()
+        log.Printf("failed to dial %s: %s", server, err)
+        return
     }
+
+    go copy(ds, us)
+    go copy(us, ds)
 }
 
 func main() {
-    err := cmd.Dispatch(os.Args[1:])
+    ln, err := net.Listen("tcp", *bind)
     if err != nil {
-        log.Fatalf("%v\n", err)
+        log.Fatalf("failed to bind: %s", err)
+    }
+
+    log.Printf("listening on %s, balancing %s", *bind, backends)
+
+    for {
+        conn, err := ln.Accept()
+        if err != nil {
+            log.Printf("failed to accept: %s", err)
+            continue
+        }
+        go handleConnection(conn, backends.Choose())
     }
 }
