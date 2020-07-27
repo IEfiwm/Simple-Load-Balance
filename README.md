@@ -1,5 +1,5 @@
 # Simple-Load-Balance
-Simple TCP/HTTP/HTTPS load balancer in Go
+Simple TCP load balancer in Go
 
 ## First Step
 
